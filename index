@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تطبيق طريق المسلم</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="https://unpkg.com/adhan@5.1.0/lib/adhan.min.js"></script>
+    <!-- Web App Manifest for PWA functionality -->
+    <link rel="manifest" href="/manifest.json">
+    <script>
+        // In-memory manifest for PWA installation
+        const manifest = {
+            "name": "طريق المسلم",
+            "short_name": "طريق المسلم",
+            "start_url": ".",
+            "display": "standalone",
+            "background_color": "#f3f4f6",
+            "theme_color": "#0d9488",
+            "icons": [
+                {
+                    "src": "https://placehold.co/192x192/0d9488/ffffff?text=TM",
+                    "sizes": "192x192",
+                    "type": "image/png"
+                },
+                {
+                    "src": "https://placehold.co/512x512/0d9488/ffffff?text=TM",
+                    "sizes": "512x512",
+                    "type": "image/png"
+                }
+            ]
+        };
+        const stringifiedManifest = JSON.stringify(manifest);
+        const manifestBlob = new Blob([stringifiedManifest], { type: 'application/json' });
+        const manifestURL = URL.createObjectURL(manifestBlob);
+        const linkTag = document.createElement('link');
+        linkTag.rel = 'manifest';
+        linkTag.href = manifestURL;
+        document.head.appendChild(linkTag);
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&display=swap');
+        body {
+            font-family: 'Amiri', 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            direction: rtl;
+            text-align: right;
+        }
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 1.5rem;
+        }
+        .dhikr-list {
+            max-height: 70vh;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: #9ca3af #e5e7eb;
+        }
+        .dhikr-list::-webkit-scrollbar {
+            width: 8px;
+        }
+        .dhikr-list::-webkit-scrollbar-track {
+            background: #e5e7eb;
+            border-radius: 10px;
+        }
+        .dhikr-list::-webkit-scrollbar-thumb {
+            background-color: #9ca3af;
+            border-radius: 10px;
+            border: 3px solid #e5e7eb;
+        }
+        /* Style for counter */
+        .counter-text {
+            font-size: 0.75rem; /* text-xs */
+            color: rgba(255, 255, 255, 0.7); /* white with transparency */
+            position: absolute;
+            bottom: 0.5rem;
+            left: 0.5rem;
+            direction: ltr;
+        }
+        /* Style for alarm message box */
+        .alarm-box {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(13, 148, 136, 0.9);
+            color: white;
+            padding: 1rem 2rem;
+            border-radius: 1rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+            display: none;
+            text-align: center;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen antialiased text-gray-900">
+
+    <div id="app" class="container bg-white rounded-xl shadow-lg my-8">
+        <!-- Main content will be injected here by JavaScript -->
+    </div>
+    
+    <!-- Alarm Message Box -->
+    <div id="alarm-message-box" class="alarm-box">
+        <p id="alarm-message-text"></p>
+    </div>
+
+    <script>
+        // --- Core Application Logic ---
+
+        // Set of constants for section names and colors
+        const SECTIONS = {
+            HOME: 'HOME',
+            MORNING_DHIKR: 'MORNING_DHIKR',
+            EVENING_DHIKR: 'EVENING_DHIKR',
+            SLEEP_DHIKR: 'SLEEP_DHIKR',
+            WAKE_DHIKR: 'WAKE_DHIKR',
+            WORRY_DHIKR: 'WORRY_DHIKR',
+            REPENTANCE_DHIKR: 'REPENTANCE_DHIKR',
+            PRAYER_TIMES: 'PRAYER_TIMES',
+        };
+
+        const COLORS = {
+            MORNING_DHIKR: 'bg-green-500',
+            EVENING_DHIKR: 'bg-blue-500',
+            SLEEP_DHIKR: 'bg-yellow-500',
+            WAKE_DHIKR: 'bg-purple-300',
+            WORRY_DHIKR: 'bg-sky-500',
+            REPENTANCE_DHIKR: 'bg-gray-500',
+            PRAYER_TIMES: 'bg-orange-500',
+        };
+
+        const ICONS = {
+            MORNING_DHIKR: '<i class="fa-solid fa-sun text-4xl"></i>',
+            EVENING_DHIKR: '<i class="fa-solid fa-moon text-4xl"></i>',
+            SLEEP_DHIKR: '<i class="fa-solid fa-bed text-4xl"></i>',
+            WAKE_DHIKR: '<i class="fa-solid fa-cloud-sun text-4xl"></i>',
+            WORRY_DHIKR: '<i class="fa-solid fa-heart-crack text-4xl"></i>',
+            REPENTANCE_DHIKR: '<i class="fa-solid fa-leaf text-4xl"></i>',
+            PRAYER_TIMES: '<i class="fa-solid fa-mosque text-4xl"></i>',
+        };
+
+        const PRAYER_NAMES = {
+            Fajr: 'الفجر',
+            Sunrise: 'الشروق',
+            Dhuhr: 'الظهر',
+            Asr: 'العصر',
+            Maghrib: 'المغرب',
+            Isha: 'العشاء',
+        };
+
+        // Full Dhikr data with repetitions
+        const DHIKR_DATA = {
+            [SECTIONS.MORNING_DHIKR]: {
+                title: 'أذكار الصباح',
+                alarm: 'morning-dhikr',
+                alarmTime: '8:00 صباحاً',
+                dhikr: [
+                    { text: 'آية الكرسي', count: 'مرة واحدة' },
+                    { text: 'قل هو الله أحد، الله الصمد، لم يلد ولم يولد، ولم يكن له كفوًا أحد. (3 مرات)', count: '3' },
+                    { text: 'قل أعوذ برب الفلق، من شر ما خلق... (3 مرات)', count: '3' },
+                    { text: 'قل أعوذ برب الناس، ملك الناس... (3 مرات)', count: '3' },
+                    { text: 'أصبحنا وأصبح الملك لله، والحمد لله، لا إله إلا الله وحده لا شريك له، له الملك وله الحمد وهو على كل شيء قدير، رب أسألك خير ما في هذا اليوم وخير ما بعده، وأعوذ بك من شر ما في هذا اليوم وشر ما بعده، رب أعوذ بك من الكسل، وسوء الكبر، رب أعوذ بك من عذاب في النار وعذاب في القبر.', count: '1' },
+                    { text: 'اللهم أنت ربي لا إله إلا أنت، خلقتني وأنا عبدك، وأنا على عهدك ووعدك ما استطعت، أعوذ بك من شر ما صنعت، أبوء لك بنعمتك علي وأبوء بذنبي فاغفر لي فإنه لا يغفر الذنوب إلا أنت.', count: '1' },
+                    { text: 'اللهم بك أصبحنا، وبك أمسينا، وبك نحيا، وبك نموت، وإليك النشور.', count: '1' },
+                    { text: 'اللهم إني أصبحت أشهدك، وأشهد حملة عرشك، وملائكتك، وجميع خلقك، أنك أنت الله لا إله إلا أنت وحدك لا شريك لك، وأن محمدا عبدك ورسولك. (4 مرات)', count: '4' },
+                    { text: 'اللهم ما أصبح بي من نعمة أو بأحد من خلقك فمنك وحدك لا شريك لك، فلك الحمد ولك الشكر.', count: '1' },
+                    { text: 'اللهم عافني في بدني، اللهم عافني في سمعي، اللهم عافني في بصري، لا إله إلا أنت. (3 مرات)', count: '3' },
+                    { text: 'اللهم إني أعوذ بك من الكفر، والفقر، وأعوذ بك من عذاب القبر، لا إله إلا أنت. (3 مرات)', count: '3' },
+                    { text: 'حسبي الله لا إله إلا هو عليه توكلت وهو رب العرش العظيم. (7 مرات)', count: '7' },
+                    { text: 'اللهم عالم الغيب والشهادة فاطر السماوات والأرض رب كل شيء ومليكه، أشهد أن لا إله إلا أنت، أعوذ بك من شر نفسي، ومن شر الشيطان وشركه، وأن أقترف على نفسي سوءا أو أجره إلى مسلم.', count: '1' },
+                    { text: 'بسم الله الذي لا يضر مع اسمه شيء في الأرض ولا في السماء وهو السميع العليم. (3 مرات)', count: '3' },
+                    { text: 'رضيت بالله ربا، وبالإسلام دينا، وبمحمد صلى الله عليه وسلم نبيا. (3 مرات)', count: '3' },
+                    { text: 'يا حي يا قيوم برحمتك أستغيث أصلح لي شأني كله ولا تكلني إلى نفسي طرفة عين. (3 مرات)', count: '3' },
+                    { text: 'سبحان الله وبحمده: عدد خلقه، ورضا نفسه، وزنة عرشه، ومداد كلماته. (3 مرات)', count: '3' },
+                    { text: 'أستغفر الله العظيم الذي لا إله إلا هو الحي القيوم وأتوب إليه. (10 مرات)', count: '10' },
+                    { text: 'سبحان الله وبحمده. (100 مرة)', count: '100' },
+                    { text: 'لا إله إلا الله وحده لا شريك له، له الملك وله الحمد وهو على كل شيء قدير. (100 مرة)', count: '100' },
+                    { text: 'اللهم صل وسلم وبارك على نبينا محمد. (10 مرات)', count: '10' },
+                ],
+            },
+            [SECTIONS.EVENING_DHIKR]: {
+                title: 'أذكار المساء',
+                alarm: 'evening-dhikr',
+                alarmTime: '6:00 مساءً',
+                dhikr: [
+                    { text: 'آية الكرسي', count: '1' },
+                    { text: 'قل هو الله أحد، الله الصمد، لم يلد ولم يولد، ولم يكن له كفوًا أحد. (3 مرات)', count: '3' },
+                    { text: 'قل أعوذ برب الفلق، من شر ما خلق... (3 مرات)', count: '3' },
+                    { text: 'قل أعوذ برب الناس، ملك الناس... (3 مرات)', count: '3' },
+                    { text: 'أمسينا وأمسى الملك لله، والحمد لله، لا إله إلا الله وحده لا شريك له، له الملك وله الحمد وهو على كل شيء قدير، رب أسألك خير ما في هذه الليلة وخير ما بعدها، وأعوذ بك من شر ما في هذه الليلة وشر ما بعدها، رب أعوذ بك من الكسل، وسوء الكبر، رب أعوذ بك من عذاب في النار وعذاب في القبر.', count: '1' },
+                    { text: 'اللهم أنت ربي لا إله إلا أنت، خلقتني وأنا عبدك، وأنا على عهدك ووعدك ما استطعت، أعوذ بك من شر ما صنعت، أبوء لك بنعمتك علي وأبوء بذنبي فاغفر لي فإنه لا يغفر الذنوب إلا أنت.', count: '1' },
+                    { text: 'اللهم بك أمسينا، وبك أصبحنا، وبك نحيا، وبك نموت، وإليك المصير.', count: '1' },
+                    { text: 'اللهم إني أمسيت أشهدك، وأشهد حملة عرشك، وملائكتك، وجميع خلقك، أنك أنت الله لا إله إلا أنت وحدك لا شريك لك، وأن محمدا عبدك ورسولك. (4 مرات)', count: '4' },
+                    { text: 'اللهم ما أمسى بي من نعمة أو بأحد من خلقك فمنك وحدك لا شريك لك، فلك الحمد ولك الشكر.', count: '1' },
+                    { text: 'اللهم عافني في بدني، اللهم عافني في سمعي، اللهم عافني في بصري، لا إله إلا أنت. (3 مرات)', count: '3' },
+                    { text: 'اللهم إني أعوذ بك من الكفر، والفقر، وأعوذ بك من عذاب القبر، لا إله إلا أنت. (3 مرات)', count: '3' },
+                    { text: 'حسبي الله لا إله إلا هو عليه توكلت وهو رب العرش العظيم. (7 مرات)', count: '7' },
+                    { text: 'اللهم عالم الغيب والشهادة فاطر السماوات والأرض رب كل شيء ومليكه، أشهد أن لا إله إلا أنت، أعوذ بك من شر نفسي، ومن شر الشيطان وشركه، وأن أقترف على نفسي سوءا أو أجره إلى مسلم.', count: '1' },
+                    { text: 'بسم الله الذي لا يضر مع اسمه شيء في الأرض ولا في السماء وهو السميع العليم. (3 مرات)', count: '3' },
+                    { text: 'رضيت بالله ربا، وبالإسلام دينا، وبمحمد صلى الله عليه وسلم نبيا. (3 مرات)', count: '3' },
+                    { text: 'يا حي يا قيوم برحمتك أستغيث أصلح لي شأني كله ولا تكلني إلى نفسي طرفة عين. (3 مرات)', count: '3' },
+                    { text: 'سبحان الله وبحمده. (100 مرة)', count: '100' },
+                    { text: 'لا إله إلا الله وحده لا شريك له، له الملك وله الحمد وهو على كل شيء قدير. (100 مرة)', count: '100' },
+                    { text: 'اللهم صل وسلم وبارك على نبينا محمد. (10 مرات)', count: '10' },
+                ],
+            },
+            [SECTIONS.SLEEP_DHIKR]: {
+                title: 'أذكار النوم',
+                alarm: 'sleep-dhikr',
+                alarmTime: '11:00 مساءً',
+                dhikr: [
+                    { text: 'باسمك اللهم أموت وأحيا.', count: '1' },
+                    { text: 'اللهم قني عذابك يوم تبعث عبادك.', count: '3' },
+                    { text: 'باسمك ربي وضعت جنبي، وبك أرفعه، فإن أمسكت نفسي فارحمها، وإن أرسلتها فاحفظها بما تحفظ به عبادك الصالحين.', count: '1' },
+                    { text: 'اللهم أسلمت نفسي إليك، ووجهت وجهي إليك، وفوضت أمري إليك، وألجأت ظهري إليك، رغبة ورهبة إليك، لا ملجأ ولا منجا منك إلا إليك. آمنت بكتابك الذي أنزلت، وبنبيك الذي أرسلت.', count: '1' },
+                    { text: 'الحمد لله الذي أطعمنا وسقانا وكفانا وآوانا، فكم ممن لا كافي له ولا مؤوي.', count: '1' },
+                    { text: 'اللهم رب السماوات ورب الأرض ورب العرش العظيم، ربنا ورب كل شيء، فالق الحب والنوى، ومنزل التوراة والإنجيل والفرقان، أعوذ بك من شر كل شيء أنت آخذ بناصيته، اللهم أنت الأول فليس قبلك شيء، وأنت الآخر فليس بعدك شيء، وأنت الظاهر فليس فوقك شيء، وأنت الباطن فليس دونك شيء، اقض عنا الدين وأغننا من الفقر.', count: '1' },
+                ],
+            },
+            [SECTIONS.WAKE_DHIKR]: {
+                title: 'أذكار الاستيقاظ',
+                alarm: 'wake-dhikr',
+                alarmTime: '7:00 صباحاً',
+                dhikr: [
+                    { text: 'الحمد لله الذي أحيانا بعد ما أماتنا وإليه النشور.', count: '1' },
+                    { text: 'لا إله إلا الله وحده لا شريك له، له الملك وله الحمد، وهو على كل شيء قدير.', count: '10' },
+                    { text: 'سبحان الله وبحمده، سبحان الله العظيم.', count: '10' },
+                    { text: 'اللهم ما أصبح بي من نعمة أو بأحد من خلقك فمنك وحدك لا شريك لك، فلك الحمد ولك الشكر.', count: '1' },
+                    { text: 'اللهم عافني في بدني، اللهم عافني في سمعي، اللهم عافني في بصري، لا إله إلا أنت.', count: '3' },
+                ],
+            },
+            [SECTIONS.WORRY_DHIKR]: {
+                title: 'أذكار الهم والحزن',
+                dhikr: [
+                    { text: 'اللهم إني أعوذ بك من الهم والحزن، والعجز والكسل، والبخل والجبن، وضلع الدين، وغلبة الرجال.' },
+                    { text: 'اللهم إني عبدك، وابن عبدك، وابن أمتك، ناصيتي بيدك، ماض في حكمك، عدل في قضاؤك، أسألك بكل اسم هو لك سميت به نفسك، أو أنزلته في كتابك، أو علمته أحداً من خلقك، أو استأثرت به في علم الغيب عندك، أن تجعل القرآن ربيع قلبي، ونور صدري، وجلاء حزني، وذهاب همي.' },
+                    { text: 'لا إله إلا أنت سبحانك إني كنت من الظالمين.' },
+                    { text: 'اللهم رحمتك أرجو، فلا تكلني إلى نفسي طرفة عين، وأصلح لي شأني كله، لا إله إلا أنت.' },
+                    { text: 'حسبي الله لا إله إلا هو عليه توكلت وهو رب العرش العظيم.' },
+                ],
+            },
+            [SECTIONS.REPENTANCE_DHIKR]: {
+                title: 'أذكار التوبة',
+                dhikr: [
+                    { text: 'اللهم أنت ربي لا إله إلا أنت، خلقتني وأنا عبدك، وأنا على عهدك ووعدك ما استطعت، أعوذ بك من شر ما صنعت، أبوء لك بنعمتك علي وأبوء بذنبي فاغفر لي فإنه لا يغفر الذنوب إلا أنت.' },
+                    { text: 'رب اغفر لي وتب علي إنك أنت التواب الغفور.' },
+                    { text: 'أستغفر الله العظيم الذي لا إله إلا هو الحي القيوم وأتوب إليه.' },
+                    { text: 'أستغفر الله.' },
+                    { text: 'سبحان الله وبحمده، أستغفر الله وأتوب إليه.' },
+                ],
+            },
+        };
+
+        const PRAYER_ALARMS = {
+            Fajr: 'Fajr',
+            Dhuhr: 'Dhuhr',
+            Asr: 'Asr',
+            Maghrib: 'Maghrib',
+            Isha: 'Isha'
+        };
+
+        let deferredPrompt; // For PWA installation
+        let currentSection = SECTIONS.HOME;
+        let dhikrCounters = {};
+        let locationError = null;
+
+        const appContainer = document.getElementById('app');
+        const alarmMessageBox = document.getElementById('alarm-message-box');
+        const alarmMessageText = document.getElementById('alarm-message-text');
+
+        // Check for PWA installability
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+        });
+
+        function showAlarmMessage(message) {
+            alarmMessageText.textContent = message;
+            alarmMessageBox.style.display = 'block';
+            setTimeout(() => {
+                alarmMessageBox.style.display = 'none';
+            }, 5000);
+        }
+
+        function renderHome() {
+            appContainer.innerHTML = `
+                <div class="p-4 sm:p-8 space-y-4">
+                    <div class="text-center mb-6">
+                        <h1 class="text-3xl sm:text-4xl font-bold text-gray-800">طريق المسلم</h1>
+                        <p class="text-sm text-gray-500 mt-2">نسالكم الدعاء بالعفو و العافية، آمين</p>
+                    </div>
+                    <div class="flex justify-center mb-6">
+                        <button onclick="installPWA()" class="bg-teal-600 text-white py-2 px-6 rounded-full shadow-lg transition-transform transform hover:scale-105 active:scale-95 flex items-center gap-2">
+                            <i class="fa-solid fa-download"></i>
+                            <span>تثبيت التطبيق</span>
+                        </button>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        ${Object.keys(SECTIONS).filter(key => key !== SECTIONS.HOME).map(key => `
+                            <button
+                                onclick="navigateTo('${SECTIONS[key]}')"
+                                class="flex flex-col items-center justify-center p-6 ${COLORS[key]} text-white rounded-xl shadow-lg transition-transform transform hover:scale-105 active:scale-95"
+                            >
+                                ${ICONS[key]}
+                                <span class="mt-4 text-xl font-bold text-center">${DHIKR_DATA[SECTIONS[key]]?.title || 'مواقيت الصلاة'}</span>
+                            </button>
+                        `).join('')}
+                    </div>
+                    <div class="mt-8 text-center text-gray-500 text-sm p-4">
+                        <p>هاتف: 00201550243338</p>
+                        <p>ايميل: pzkt@outlook.com</p>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderDhikr() {
+            const dhikrInfo = DHIKR_DATA[currentSection];
+            const isCountable = [SECTIONS.MORNING_DHIKR, SECTIONS.EVENING_DHIKR, SECTIONS.SLEEP_DHIKR, SECTIONS.WAKE_DHIKR].includes(currentSection);
+            const isAlarmEnabled = localStorage.getItem(`alarm-${dhikrInfo.alarm}`) === 'enabled';
+            
+            appContainer.innerHTML = `
+                <div class="relative h-full flex flex-col p-4 sm:p-8 min-h-[600px]">
+                    <div class="absolute inset-0 ${COLORS[currentSection]} opacity-90 rounded-xl"></div>
+                    <div class="absolute inset-0 bg-cover bg-center rounded-xl" style="background-image: url(https://placehold.co/800x600/${COLORS[currentSection].replace('bg-', '')});"></div>
+                    <div class="relative flex-grow flex flex-col items-center justify-center text-white p-4">
+                        <button onclick="navigateTo('${SECTIONS.HOME}')" class="absolute top-4 right-4 bg-white text-gray-800 p-2 rounded-full shadow-lg transition-transform hover:scale-110 active:scale-90">
+                            <i class="fa-solid fa-arrow-right-from-bracket"></i>
+                        </button>
+                        <div class="text-center mb-6">
+                            <h2 class="text-2xl sm:text-3xl font-bold">${dhikrInfo.title}</h2>
+                            ${dhikrInfo.alarm ? `
+                                <div class="mt-4 flex items-center justify-center space-x-2 space-x-reverse">
+                                    <button onclick="toggleAlarm('${dhikrInfo.alarm}')" class="bg-white text-gray-800 py-1 px-4 rounded-full shadow-lg transition-transform hover:scale-105 active:scale-95 flex items-center gap-2">
+                                        <i class="fa-solid fa-bell${isAlarmEnabled ? '' : '-slash'}"></i>
+                                        <span>${isAlarmEnabled ? 'إيقاف التنبيهات' : 'تفعيل التنبيهات'}</span>
+                                    </button>
+                                    <div class="relative group">
+                                        <i class="fa-solid fa-circle-info text-white text-lg cursor-pointer"></i>
+                                        <div class="absolute top-full mt-2 left-1/2 -translate-x-1/2 p-2 bg-gray-800 text-white text-xs rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                                            ميعاد التنبيه: ${dhikrInfo.alarmTime}
+                                        </div>
+                                    </div>
+                                </div>
+                            ` : ''}
+                        </div>
+                        <div class="dhikr-list flex-grow w-full max-w-2xl space-y-6">
+                            ${dhikrInfo.dhikr.map((item, index) => `
+                                <div
+                                    onclick="${isCountable ? `incrementCounter(${index})` : ''}"
+                                    class="relative bg-white/20 backdrop-blur-sm rounded-lg p-4 sm:p-6 ${isCountable ? 'cursor-pointer' : 'cursor-default'} transform transition-transform hover:scale-[1.02] active:scale-[0.98] shadow-lg"
+                                >
+                                    <p class="text-lg text-center font-amiri leading-8">${item.text}</p>
+                                    ${item.count ? `
+                                        <span class="block text-xs mt-2 text-white/70 text-center">${item.count}</span>
+                                    ` : ''}
+                                    ${isCountable ? `
+                                        <div class="mt-4 flex justify-center items-center">
+                                            <span id="counter-${index}" class="text-xl font-bold">${dhikrCounters[index] || 0}</span>
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderPrayerTimes() {
+            const isAlarmEnabled = localStorage.getItem('alarm-prayer') === 'enabled';
+
+            appContainer.innerHTML = `
+                <div class="relative h-full flex flex-col p-4 sm:p-8 min-h-[600px]">
+                    <div class="absolute inset-0 ${COLORS[SECTIONS.PRAYER_TIMES]} opacity-90 rounded-xl"></div>
+                    <div class="absolute inset-0 bg-cover bg-center rounded-xl" style="background-image: url(https://placehold.co/800x600/fdba74/ffffff?text=TD);"></div>
+                    <div class="relative flex-grow flex flex-col items-center justify-center text-white p-4">
+                        <button onclick="navigateTo('${SECTIONS.HOME}')" class="absolute top-4 right-4 bg-white text-gray-800 p-2 rounded-full shadow-lg transition-transform hover:scale-110 active:scale-90">
+                            <i class="fa-solid fa-arrow-right-from-bracket"></i>
+                        </button>
+                        <div class="text-center mb-6">
+                            <h2 class="text-2xl sm:text-3xl font-bold">مواقيت الصلاة</h2>
+                            <p class="text-sm text-gray-200 mt-2">تحديث تلقائي حسب موقعك</p>
+                            <div class="mt-4 flex items-center justify-center space-x-2 space-x-reverse">
+                                <button onclick="toggleAlarm('prayer')" class="bg-white text-gray-800 py-1 px-4 rounded-full shadow-lg transition-transform hover:scale-105 active:scale-95 flex items-center gap-2">
+                                    <i class="fa-solid fa-bell${isAlarmEnabled ? '' : '-slash'}"></i>
+                                    <span>${isAlarmEnabled ? 'إيقاف التنبيهات' : 'تفعيل التنبيهات'}</span>
+                                </button>
+                                <div class="relative group">
+                                    <i class="fa-solid fa-circle-info text-white text-lg cursor-pointer"></i>
+                                    <div class="absolute top-full mt-2 left-1/2 -translate-x-1/2 p-2 bg-gray-800 text-white text-xs rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                                        يتم التنبيه قبل كل أذان بدقيقتين.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="prayer-times-content" class="w-full max-w-md bg-white/20 backdrop-blur-sm rounded-lg p-6 shadow-lg">
+                            <!-- Content will be loaded here -->
+                        </div>
+                    </div>
+                </div>
+            `;
+            fetchPrayerTimes();
+        }
+
+        // --- State Management and Navigation ---
+
+        function navigateTo(section) {
+            currentSection = section;
+            const state = { section };
+            history.pushState(state, '', `#${section}`);
+            renderCurrentSection();
+        }
+
+        function renderCurrentSection() {
+            if (currentSection === SECTIONS.HOME) {
+                dhikrCounters = {};
+                renderHome();
+            } else if (currentSection === SECTIONS.PRAYER_TIMES) {
+                renderPrayerTimes();
+            } else {
+                dhikrCounters = {};
+                renderDhikr();
+            }
+        }
+
+        // Handle browser's back button
+        window.onpopstate = (event) => {
+            if (event.state && event.state.section) {
+                currentSection = event.state.section;
+                renderCurrentSection();
+            } else {
+                currentSection = SECTIONS.HOME;
+                renderCurrentSection();
+            }
+        };
+
+        // --- Functionality: Counters, Alarms, Location ---
+
+        function incrementCounter(index) {
+            dhikrCounters[index] = (dhikrCounters[index] || 0) + 1;
+            const counterElement = document.getElementById(`counter-${index}`);
+            if (counterElement) {
+                counterElement.textContent = dhikrCounters[index];
+            }
+        }
+
+        function fetchPrayerTimes() {
+            const contentDiv = document.getElementById('prayer-times-content');
+            if (contentDiv) {
+                contentDiv.innerHTML = `
+                    <div class="flex flex-col items-center justify-center text-center">
+                        <i class="fa-solid fa-map-pin animate-pulse text-white/50 text-6xl"></i>
+                        <p class="mt-4 text-lg">جارٍ تحديد موقعك...</p>
+                    </div>
+                `;
+            }
+
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const coordinates = new adhan.Coordinates(position.coords.latitude, position.coords.longitude);
+                        const date = new Date();
+                        const params = adhan.CalculationMethod.UmmAlQura();
+                        const prayers = new adhan.PrayerTimes(coordinates, date, params);
+                        
+                        const prayerTimesHTML = `
+                            <div class="grid grid-cols-2 gap-4 text-lg sm:text-xl">
+                                ${Object.keys(PRAYER_NAMES).map(key => {
+                                    const prayerTime = prayers.timeForPrayer(adhan.Prayer[key]);
+                                    const timeString = prayerTime ? prayerTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--';
+                                    return `
+                                        <div class="flex flex-col items-center text-center">
+                                            <span class="font-semibold">${PRAYER_NAMES[key]}</span>
+                                            <span class="mt-1 text-2xl font-bold">${timeString}</span>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        `;
+                        if (contentDiv) {
+                            contentDiv.innerHTML = prayerTimesHTML;
+                        }
+                    },
+                    (error) => {
+                        console.error('Error getting location:', error);
+                        if (contentDiv) {
+                            contentDiv.innerHTML = `<p class="text-center text-lg text-red-200">لم نتمكن من الوصول إلى موقعك. يرجى تفعيل الموقع لإظهار مواقيت الصلاة.</p>`;
+                        }
+                    },
+                    { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+                );
+            } else {
+                if (contentDiv) {
+                    contentDiv.innerHTML = `<p class="text-center text-lg text-red-200">متصفحك لا يدعم خاصية تحديد الموقع.</p>`;
+                }
+            }
+        }
+        
+        function requestNotificationPermission() {
+            if ('Notification' in window) {
+                Notification.requestPermission();
+            }
+        }
+
+        function toggleAlarm(alarmKey) {
+            const isEnabled = localStorage.getItem(`alarm-${alarmKey}`) === 'enabled';
+            if (isEnabled) {
+                localStorage.setItem(`alarm-${alarmKey}`, 'disabled');
+                showAlarmMessage('تم إيقاف التنبيهات بنجاح.');
+            } else {
+                localStorage.setItem(`alarm-${alarmKey}`, 'enabled');
+                showAlarmMessage('تم تفعيل التنبيهات بنجاح.');
+            }
+            renderCurrentSection(); // Refresh the view to show the new state
+        }
+
+        function setupAlarms() {
+            setInterval(() => {
+                const now = new Date();
+                const currentHour = now.getHours();
+                const currentMinute = now.getMinutes();
+                const currentDay = now.getDate();
+
+                // Dhikr alarms
+                for (const key in DHIKR_DATA) {
+                    const dhikrInfo = DHIKR_DATA[key];
+                    if (dhikrInfo.alarm && localStorage.getItem(`alarm-${dhikrInfo.alarm}`) === 'enabled') {
+                        const [hour, minute] = dhikrInfo.alarmTime.split(' ')[0].split(':').map(Number);
+                        const period = dhikrInfo.alarmTime.split(' ')[1];
+                        const alarmHour = period === 'مساءً' && hour !== 12 ? hour + 12 : hour;
+
+                        if (currentHour === alarmHour && currentMinute === minute) {
+                            if (localStorage.getItem(`alarm-sent-${dhikrInfo.alarm}-${currentDay}`) !== 'true') {
+                                if ('Notification' in window && Notification.permission === 'granted') {
+                                    new Notification('تطبيق طريق المسلم', {
+                                        body: `حان الآن وقت ${dhikrInfo.title}!`,
+                                        icon: 'https://placehold.co/128x128/0d9488/ffffff?text=TM',
+                                        silent: false,
+                                    });
+                                    showAlarmMessage(`حان الآن وقت ${dhikrInfo.title}!`);
+                                    localStorage.setItem(`alarm-sent-${dhikrInfo.alarm}-${currentDay}`, 'true');
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Reset daily alarms
+                if (currentHour === 0 && currentMinute === 1) {
+                    localStorage.clear();
+                }
+
+            }, 60000); // Check every minute
+        
+            // Prayer alarms
+            if (localStorage.getItem('alarm-prayer') === 'enabled' && navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const coordinates = new adhan.Coordinates(position.coords.latitude, position.coords.longitude);
+                        const date = new Date();
+                        const params = adhan.CalculationMethod.UmmAlQura();
+                        const prayers = new adhan.PrayerTimes(coordinates, date, params);
+
+                        Object.keys(PRAYER_NAMES).forEach(key => {
+                            const prayerTime = prayers.timeForPrayer(adhan.Prayer[key]);
+                            if (prayerTime) {
+                                // Set alarm to fire 2 minutes before prayer time
+                                const alarmTime = new Date(prayerTime.getTime() - 2 * 60 * 1000);
+                                const timeUntil = alarmTime.getTime() - new Date().getTime();
+
+                                if (timeUntil > 0) {
+                                    setTimeout(() => {
+                                        const message = `حان الآن وقت صلاة ${PRAYER_NAMES[key]}!`;
+                                        if ('Notification' in window && Notification.permission === 'granted') {
+                                            new Notification('تطبيق طريق المسلم', {
+                                                body: message,
+                                                icon: 'https://placehold.co/128x128/0d9488/ffffff?text=TM',
+                                                silent: false,
+                                            });
+                                            showAlarmMessage(message);
+                                        }
+                                    }, timeUntil);
+                                }
+                            }
+                        });
+                    },
+                    (error) => console.error('Error setting prayer alarms:', error),
+                    { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+                );
+            }
+        }
+        
+        function installPWA() {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                deferredPrompt.userChoice.then((choiceResult) => {
+                    if (choiceResult.outcome === 'accepted') {
+                        console.log('User accepted the install prompt');
+                    } else {
+                        console.log('User dismissed the install prompt');
+                    }
+                    deferredPrompt = null;
+                });
+            } else {
+                showAlarmMessage('التطبيق مثبت بالفعل أو لا يمكن تثبيته من هذا المتصفح.');
+            }
+        }
+
+        window.onload = function() {
+            requestNotificationPermission();
+            setupAlarms();
+            renderHome();
+        };
+    </script>
+</body>
+</html>
